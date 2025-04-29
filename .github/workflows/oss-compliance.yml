@@ -65,7 +65,6 @@ jobs:
 
       - name: Generate Compliance Excel Reports
         run: |
-          wget https://raw.githubusercontent.com/Bharathnelle335/project_Leo/main/.github/scripts/generate_excel_merge_syft_scanoss.py
           python3 generate_excel_merge_syft_scanoss.py $GITHUB_WORKSPACE/syft-sbom.spdx.json $GITHUB_WORKSPACE/scanoss-results.json
 
       - name: Upload Reports
