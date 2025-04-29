@@ -1,0 +1,80 @@
+name: Universal OSS Compliance & SBOM (Syft + SCANOSS)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  oss-compliance-universal:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install required tools
+        run: |
+          pip install scanoss
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Auto Detect and Build (only if needed)
+        run: |
+          # Detect Maven project
+          if [ -f "**/pom.xml" ] || [ -f "pom.xml" ]; then
+            echo "Maven project detected. Running Maven dependency build..."
+            chmod +x mvnw || true
+            ./mvnw dependency:copy-dependencies -DincludeScope=runtime || mvn dependency:copy-dependencies -DincludeScope=runtime
+          else
+            echo "No Maven project detected. Skipping Maven build."
+          fi
+
+          # Detect NodeJS project
+          if [ -f "**/package.json" ] || [ -f "package.json" ]; then
+            echo "NodeJS project detected. Running npm install..."
+            npm install
+          else
+            echo "No NodeJS project detected. Skipping npm install."
+          fi
+
+          # Detect Python project
+          if [ -f "**/requirements.txt" ] || [ -f "requirements.txt" ]; then
+            echo "Python project detected. Running pip install..."
+            pip install -r requirements.txt
+          else
+            echo "No Python requirements.txt detected. Skipping pip install."
+          fi
+
+      - name: Run SCANOSS Scan
+        run: |
+          scanoss-py scan -o scanoss-results.json .
+
+      - name: Generate SBOM with Syft
+        run: |
+          syft dir:. -o spdx-json > $GITHUB_WORKSPACE/syft-sbom.spdx.json
+
+      - name: Install Python libraries for report generation
+        run: |
+          pip install pandas openpyxl
+
+      - name: Generate Compliance Excel Reports
+        run: |
+          wget https://raw.githubusercontent.com/Bharathnelle335/project_Leo/main/.github/scripts/generate_excel_merge_syft_scanoss.py
+          python3 generate_excel_merge_syft_scanoss.py $GITHUB_WORKSPACE/syft-sbom.spdx.json $GITHUB_WORKSPACE/scanoss-results.json
+
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-and-sbom-output
+          path: |
+            compliance-report.xlsx
+            syft-compliance-report.xlsx
+            scanoss-compliance-report.xlsx
+            syft-sbom.spdx.json
+            scanoss-results.json
